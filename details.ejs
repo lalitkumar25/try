@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title><%= user.name %> | Portfolio</title>
+    <style>
+        :root { --accent: <%= user.color %>; }
+        body { background: #050811; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        
+        .glass-card { 
+            background: rgba(255, 255, 255, 0.02); backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; 
+            padding: 40px; width: 100%; max-width: 750px; 
+            animation: slideUp 0.8s ease-out; 
+        }
+
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+
+        h1 { font-size: 3rem; margin: 0; text-shadow: 0 0 10px var(--accent); }
+        .role { color: var(--accent); font-size: 1.2rem; margin-bottom: 25px; }
+
+        .sec-title { 
+            color: var(--accent); text-transform: uppercase; letter-spacing: 2px; 
+            font-size: 0.8rem; margin-top: 30px; border-bottom: 1px solid rgba(255,255,255,0.1); 
+            padding-bottom: 8px; font-weight: bold; 
+        }
+
+        .item-box { 
+            background: rgba(255, 255, 255, 0.03); padding: 12px; border-radius: 10px; 
+            margin-top: 10px; border-left: 4px solid var(--accent); 
+            animation: revealRight 0.6s ease forwards; opacity: 0;
+        }
+
+        @keyframes revealRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+
+        .tag { 
+            display: inline-block; background: rgba(255,255,255,0.05); border: 1px solid var(--accent); 
+            padding: 5px 12px; border-radius: 6px; margin: 5px; font-size: 0.8rem; 
+        }
+    </style>
+</head>
+<body>
+    <div class="glass-card">
+        <a href="/" style="color: gray; text-decoration: none; font-size: 0.8rem;">← BACK TO ALL</a>
+        
+        <h1><%= user.name %></h1>
+        <div class="role"><%= user.role %></div>
+
+        <div class="sec-title">Career Objective</div>
+        <p style="opacity: 0.8; line-height: 1.6;"><%= user.objective %></p>
+
+        <div class="sec-title">Education</div>
+        <% user.education.forEach((edu, i) => { %>
+            <div class="item-box" style="animation-delay: <%= 0.2 + (i*0.1) %>s">● <%= edu %></div>
+        <% }) %>
+
+        <div class="sec-title">Projects</div>
+        <% user.projects.forEach((proj, i) => { %>
+            <div class="item-box" style="animation-delay: <%= 0.4 + (i*0.1) %>s">🚀 <%= proj %></div>
+        <% }) %>
+
+        <div class="sec-title">Skills</div>
+        <div style="margin-top: 15px;">
+            <% user.skills.forEach(skill => { %>
+                <span class="tag"><%= skill %></span>
+            <% }) %>
+        </div>
+
+        <div class="sec-title">Certification</div>
+        <div class="item-box" style="border-color: #fff; animation-delay: 0.8s;">📜 <%= user.certification %></div>
+    </div>
+</body>
+</html>

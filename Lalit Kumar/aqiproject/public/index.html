@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Smart Air Quality (AQI) Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body{font-family: 'Segoe UI', Tahoma, sans-serif; background:#f1f5f9; margin:0; padding: 20px; color: #334155;}
+    .card{max-width:900px; margin:0 auto; background:#fff; padding:25px; border-radius:16px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);}
+    .input-group { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+    input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
+    button { padding: 12px 20px; border-radius: 8px; border: none; background: #2563eb; color: white; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button.secondary { background: #64748b; }
+    button.outline { background: transparent; border: 1px solid #cbd5e1; color: #64748b; } 
+    
+    .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+    @media (max-width: 768px) { .dashboard { grid-template-columns: 1fr; } }
+    
+    .metric-box { background: #f8fafc; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #e2e8f0; }
+    .gauge-container { width: 180px; height: 110px; margin: 0 auto; overflow: hidden; }
+    .gauge-val { font-size: 2.5rem; font-weight: 800; display: block; margin-top: -10px; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 15px; }
+    .chip { background: #e2e8f0; padding: 5px 10px; border-radius: 15px; font-size: 0.85rem; }
+    #map { height: 280px; border-radius: 12px; width: 100%; z-index: 1; }
+    .chart-container { height: 350px; margin-top: 20px; position: relative; }
+    
+    .error { color: #ef4444; background: #fee2e2; padding: 10px; border-radius: 8px; margin-top: 10px; display: none; }
+    #result { display: none; }
+
+    /* HISTORY LIST STYLE */
+    #historyList { margin-top: 15px; display: none; background: #f8fafc; padding: 15px; border-radius: 12px; }
+    .hist-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
+    .hist-item:last-child { border-bottom: none; }
+    .badge { padding: 2px 8px; border-radius: 12px; font-weight: bold; color: #fff; font-size: 0.8rem; }
+
+    .health-card { margin-top: 25px; background: #fff; border: 2px solid #eee; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+    .health-header { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .advice-row { display: flex; gap: 15px; align-items: flex-start; }
+    .icon-box { font-size: 1.5rem; background: rgba(255,255,255,0.6); padding: 10px; border-radius: 50%; }
+    .text-box { font-size: 0.95rem; line-height: 1.4; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2 style="margin:0"> AQI</h2>
+  <div style="color: #64748b; margin-top:5px;">Check AQI.</div>
+  
+  <div class="input-group">
+    <input id="cityInput" placeholder="Enter city (e.g. Delhi)" />
+    <button id="checkBtn">Check</button>
+    <button id="locBtn" class="secondary">MY LOCATION</button>
+    <button id="histBtn" class="outline">History</button>
+  </div>
+
+  <div id="historyList"></div>
+  <!-- Download Button -->
+<div style="text-align: center; margin-top: 10px;">
+  <a href="/api/download_csv" target="_blank" style="text-decoration: none; color: #2563eb; font-weight: bold; font-size: 0.9rem;">
+    Download History
+  </a>
+</div>
+
+
+  <div id="errorMsg" class="error"></div>
+
+  <div id="result">
+    <h1 id="placeName" style="margin:20px 0 0 0; font-size: 1.8rem;">City</h1>
+    <div style="color:#64748b" id="coords"></div>
+    <div class="dashboard">
+      <div class="metric-box">
+        <div class="gauge-container"><svg id="gauge" viewBox="0 0 200 120"></svg></div>
+        <span id="aqiValue" class="gauge-val">-</span>
+        <span id="aqiText" style="font-weight:600; font-size:1rem;">Loading...</span>
+        <div class="chips" id="pollutants"></div>
+      </div>
+      <div><div id="map"></div></div>
+    </div>
+    <div id="healthSection" class="health-card"></div>
+    <div class="chart-container"><canvas id="forecastChart"></canvas></div>
+  </div>
+</div>
+<script>
+const getApiBase=()=>(location.protocol==='blob:'||location.protocol==='file:')?'http://localhost:3000':'';
+const $=id=>document.getElementById(id);
+let map=null,marker=null,circle=null,chart=null;
+
+function initMap(){ map=L.map('map').setView([20,78],4); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map); }
+initMap();
+
+function drawGauge(score){
+  const colors=['#16a34a','#ca8a04','#ea580c','#dc2626','#7f1d1d'];
+  const color=colors[score-1]||'#999';
+  const labels=['Good','Fair','Moderate','Poor','Very Poor'];
+  $('aqiText').textContent=labels[score-1]; $('aqiText').style.color=color; $('aqiValue').textContent=score;
+  const svg=$('gauge'); while(svg.firstChild)svg.removeChild(svg.firstChild);
+  const r=80,cx=100,cy=100;
+  const arc=(s,e,c)=>{
+    const rad=d=>(d-180)*Math.PI/180;
+    const x1=cx+r*Math.cos(rad(s)), y1=cy+r*Math.sin(rad(s));
+    const x2=cx+r*Math.cos(rad(e)), y2=cy+r*Math.sin(rad(e));
+    const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d",`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`);
+    p.setAttribute("fill","none"); p.setAttribute("stroke",c); p.setAttribute("stroke-width","20"); p.setAttribute("stroke-linecap","round");
+    svg.appendChild(p);
+  };
+  arc(0,180,"#e2e8f0"); arc(0,(score/5)*180,color);
+}
+
+function updateHealth(aqi){
+  const section=$('healthSection');
+  let theme="",bg="",mask="",group="";
+  if(aqi===1){ theme="#15803d"; bg="#dcfce7"; mask="No mask needed."; group="Safe for everyone."; }
+  else if(aqi===2){ theme="#854d0e"; bg="#fef9c3"; mask="Mask not strictly required."; group="Sensitive people monitor breathing."; }
+  else if(aqi===3){ theme="#9a3412"; bg="#ffedd5"; mask="😷 Mask recommended."; group="⚠️ Reduce outdoor activity."; }
+  else if(aqi===4){ theme="#b91c1c"; bg="#fee2e2"; mask="😷 <b>WEAR A MASK!</b>"; group="⛔ <b>Stay Indoors.</b>"; }
+  else{ theme="#7f1d1d"; bg="#fecaca"; mask="😷 <b>MASK MANDATORY!</b>"; group="🚫 <b>DANGER:</b> Stay indoors!"; }
+  section.style.backgroundColor=bg; section.style.borderColor=theme; section.style.color="#333";
+  section.innerHTML=`<div class="health-header" style="color:${theme}"><span>🏥 Health Advice</span></div><div class="advice-row"><div class="icon-box">😷</div><div class="text-box"><strong>Mask Usage</strong>${mask}</div></div><div class="advice-row"><div class="icon-box">👴👶</div><div class="text-box"><strong>Vulnerable Groups</strong>${group}</div></div>`;
+}
+
+async function loadData(lat,lon,name){
+  $('errorMsg').style.display='none'; $('result').style.display='block';
+  $('placeName').textContent=name; $('coords').textContent=`${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+  map.setView([lat,lon],11);
+  if(marker)map.removeLayer(marker); if(circle)map.removeLayer(circle);
+  marker=L.marker([lat,lon]).addTo(map);
+  try{
+    // UPDATE: Sending 'name' to backend so it can save to DB
+    const res=await fetch(`${getApiBase()}/api/aqi?lat=${lat}&lon=${lon}&name=${encodeURIComponent(name)}`);
+    if(!res.ok) throw new Error("API Error");
+    const data=await res.json();
+    if(!data.list?.length) return alert("No Data");
+    const item=data.list[0]; const aqi=item.main.aqi;
+    drawGauge(aqi); updateHealth(aqi);
+    const p=item.components;
+    $('pollutants').innerHTML=`<div class="chip">PM2.5: <span>${p.pm2_5}</span></div><div class="chip">NO2: <span>${p.no2}</span></div>`;
+    const colors=['#16a34a','#ca8a04','#ea580c','#dc2626','#7f1d1d'];
+    circle=L.circle([lat,lon],{color:colors[aqi-1],fillColor:colors[aqi-1],fillOpacity:0.3,radius:4000}).addTo(map);
+    loadForecast(lat,lon);
+  }catch(e){ console.error(e); $('errorMsg').textContent="Connection Error"; $('errorMsg').style.display='block'; }
+}
+
+async function loadForecast(lat,lon){
+  const res=await fetch(`${getApiBase()}/api/forecast?lat=${lat}&lon=${lon}`);
+  const data=await res.json(); if(!data.list) return;
+  const labels=[],values=[];
+  data.list.slice(0,24).forEach(i=>{ labels.push(new Date(i.dt*1000).getHours()+":00"); values.push(i.components.pm2_5); });
+  const ctx=$('forecastChart').getContext('2d');
+  if(chart)chart.destroy();
+  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'PM2.5',data:values,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.1)',fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false}});
+}
+
+// History
+$('histBtn').onclick = async () => {
+  const list = $('historyList');
+  if(list.style.display === 'block') { list.style.display='none'; return; }
+  list.style.display='block'; list.innerHTML='Loading...';
+  try {
+    const res = await fetch(`${getApiBase()}/api/history`);
+    const data = await res.json();
+    if(!data.length) { list.innerHTML='No history yet.'; return; }
+    const colors=['#16a34a','#ca8a04','#ea580c','#dc2626','#7f1d1d'];
+    list.innerHTML = data.map(d => `
+      <div class="hist-item">
+        <div><strong>${d.city}</strong> <span style="color:#64748b;font-size:0.8em">(${d.date.split(' ')[0]})</span></div>
+        <div class="badge" style="background:${colors[d.aqi-1]||'#999'}">AQI: ${d.aqi}</div>
+      </div>`).join('');
+  } catch(e) { list.innerHTML='Error loading history'; }
+};
+
+$('checkBtn').onclick=async()=>{
+  const q=$('cityInput').value; if(!q)return;
+  try{
+    const res=await fetch(`${getApiBase()}/api/geocode?q=${q}`);
+    const d=await res.json();
+    if(d.length) loadData(d[0].lat,d[0].lon,d[0].name);
+    else alert("City not found");
+  }catch(e){ alert("Error connecting to backend"); }
+};
+$('locBtn').onclick=()=>{navigator.geolocation.getCurrentPosition(p=>loadData(p.coords.latitude,p.coords.longitude,"Your Location"),()=>alert("Location denied"));};
+</script></body></html>
